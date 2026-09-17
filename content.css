@@ -1,0 +1,713 @@
+.sentinel-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 6px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.6;
+  color: #123a52;
+  background: #eaf2f8;
+  border: 1px solid #aed6f1;
+  border-radius: 10px;
+  cursor: pointer;
+  vertical-align: middle;
+}
+.sentinel-badge:hover {
+  background: #d4e6f1;
+}
+.sentinel-badge:disabled {
+  opacity: 0.75;
+  cursor: default;
+}
+
+.sentinel-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #9aa5ad; /* unscanned = neutral grey */
+  flex: none;
+}
+.sentinel-badge.sentinel-green .sentinel-dot { background: #27ae60; }
+.sentinel-badge.sentinel-orange .sentinel-dot { background: #e67e22; width: 10px; height: 10px; }
+/* A high-risk result gets a bigger, bolder on-page badge too, not just a
+   subtle dot, since that badge is often the only thing visible before the
+   panel is even opened. A gentle pulse draws the eye without being a full
+   flashing alarm, and only runs for anyone who hasn't asked their system to
+   reduce motion. */
+.sentinel-badge.sentinel-red { border-color: #c0392b; background: #fdecea; }
+.sentinel-badge.sentinel-red .sentinel-dot { background: #e74c3c; width: 11px; height: 11px; }
+@media (prefers-reduced-motion: no-preference) {
+  .sentinel-badge.sentinel-red .sentinel-dot {
+    animation: sentinel-pulse 1.6s ease-in-out infinite;
+  }
+}
+@keyframes sentinel-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.55); }
+  50% { box-shadow: 0 0 0 5px rgba(231, 76, 60, 0); }
+}
+
+/* A background fetch will never succeed on a page that only fills in its
+   text once it's actually open (real report, hellopeter.com). Once we know
+   that, the badge stops looking like a plain re-checkable "Check" and
+   instead reads as its own distinct action: open the real page. Bolder
+   weight and underline on the label do that without needing a new icon. */
+.sentinel-badge[data-sentinel-needs-manual-open="1"] {
+  border-width: 2px;
+}
+.sentinel-badge[data-sentinel-needs-manual-open="1"] .sentinel-label {
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .sentinel-badge {
+    color: #eaf2f8;
+    background: #1c2b36;
+    border: 1px solid #3a5a72;
+  }
+  .sentinel-badge:hover {
+    background: #24384682;
+    background: #24384a;
+  }
+  .sentinel-badge.sentinel-red {
+    background: #3a1f1f;
+    border-color: #e74c3c;
+  }
+}
+
+.sentinel-launcher {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  /* Max z-index, same as the results panel. Some sites (cookie-consent
+     overlays especially) inject their own full-page layer at this same
+     max value; matching it keeps our button from ever losing a stacking
+     tie to one that happened to load after us. */
+  z-index: 2147483647;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 14px;
+  background: #1a5276;
+  color: #ffffff;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+  /* Real bug (alison.com): this is a real <button> element with no width
+     of its own set, so a host site's own "make every button full-width"
+     rule (extremely common on course/signup platforms, which style forms
+     that way) had nothing to override, it just applied, and the button
+     spanned the entire page. Same host-CSS-bleed category as the earlier
+     invisible-text and disappearing-link bugs: every box-defining property
+     this element depends on needs its own explicit, !important value so a
+     host page's styles can never leak in and reshape it. */
+  width: max-content !important;
+  box-sizing: border-box !important;
+}
+.sentinel-launcher:hover {
+  background: #154360;
+}
+/* Real report: the fixed top-right spot this button lives in sometimes
+   sits right on top of real page content (a nav item, a sign-in button),
+   blocking it. It's draggable now; this just signals that and gives a
+   visual "picked up" cue while it's being moved. touch-action prevents
+   the browser's own scroll/pan gesture from fighting the drag on touch
+   devices. */
+.sentinel-launcher {
+  touch-action: none;
+}
+.sentinel-launcher-dragging {
+  cursor: grabbing;
+  opacity: 0.85;
+  transition: none;
+}
+.sentinel-launcher-main {
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+.sentinel-launcher-count {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.sentinel-panel {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  /* Same defensive fix as .sentinel-launcher: a plain div is less exposed
+     to a host page's "full-width" rules than a <button>, but there's no
+     reason to leave it unprotected either. !important guarantees a host
+     page's own styles can never resize or reshape this. */
+  width: 380px !important;
+  box-sizing: border-box !important;
+  max-height: 80vh;
+  overflow-y: auto;
+  /* Real bug (education.securiti.ai): the panel's own header rendered with
+     a solid red/maroon background instead of the normal dark panel color,
+     the header's title bar, not any of our own severity-colored elements.
+     Same host-CSS-bleed category as the launcher width bug above: a
+     security-brand site very plausibly has its own broad "anything with
+     header in its class name gets our brand color" rule, and our
+     background/color here had nothing declared with enough weight to
+     resist it. !important on the panel's own base color/background closes
+     that off the same way width was closed off. */
+  background: #ffffff !important;
+  color: #1c1c1c !important;
+  border: 1px solid #d0d0d0;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  z-index: 2147483647;
+  display: none;
+}
+.sentinel-panel.sentinel-open {
+  display: block;
+}
+/* Real feature request: closing the panel to interact with the page
+   underneath meant losing it entirely; minimizing collapses it to just
+   its header, small and out of the way, but the rendered results
+   underneath are never discarded, so reopening is instant, nothing gets
+   re-fetched or re-rendered. */
+.sentinel-panel.sentinel-minimized {
+  /* Needs !important too now: the base .sentinel-panel rule above sets its
+     width with !important (host-CSS-bleed protection), and !important
+     always wins over a plain declaration regardless of selector
+     specificity, so without this the panel would stay pinned at 380px
+     wide even while "minimized." */
+  width: max-content !important;
+  max-height: none;
+  overflow: visible;
+}
+.sentinel-panel.sentinel-minimized .sentinel-panel-body {
+  display: none;
+}
+.sentinel-panel.sentinel-minimized .sentinel-panel-header {
+  cursor: pointer;
+  border-radius: 10px;
+  border-bottom: none;
+}
+.sentinel-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #eee;
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+  background: #fff !important;
+  color: #1c1c1c !important;
+  border-radius: 10px 10px 0 0;
+  white-space: nowrap;
+  /* Real feedback: the panel could be minimized/closed but not moved, and
+     it can land blocking the corner of a page. Same drag pattern as the
+     launcher button, grabbing the header (not the whole panel, so the
+     results body underneath still scrolls and its buttons still click
+     normally). */
+  cursor: grab;
+  touch-action: none;
+}
+.sentinel-panel-dragging .sentinel-panel-header {
+  cursor: grabbing;
+}
+.sentinel-panel-dragging {
+  transition: none;
+  user-select: none;
+}
+.sentinel-panel-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+.sentinel-panel-close,
+.sentinel-panel-minimize {
+  border: none;
+  background: none !important;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  color: #888 !important;
+  padding: 2px 4px;
+}
+.sentinel-panel-close {
+  font-size: 18px;
+}
+.sentinel-panel-close:hover,
+.sentinel-panel-minimize:hover {
+  color: #444 !important;
+}
+.sentinel-panel-body {
+  padding: 10px 12px 14px;
+}
+.sentinel-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 8px;
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #eee;
+}
+.sentinel-overview-card {
+  background: rgba(0, 0, 0, 0.035);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  padding: 8px 6px;
+  text-align: center;
+}
+.sentinel-overview-title {
+  font-weight: 800;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #555;
+  margin-bottom: 6px;
+}
+.sentinel-overview-card .sentinel-summary-row {
+  justify-content: center;
+  margin-bottom: 0;
+}
+.sentinel-overview-clear {
+  font-size: 11px;
+  font-weight: 800;
+  color: #27ae60;
+}
+.sentinel-overview-unchecked {
+  font-size: 11px;
+  font-weight: 800;
+  color: #a35a00;
+}
+.sentinel-summary {
+  margin: 0 0 8px;
+  font-weight: 600;
+}
+.sentinel-result-block:first-child .sentinel-link-label {
+  margin-top: 0;
+}
+.sentinel-link-label {
+  margin: 0 0 2px;
+  font-weight: 700;
+  font-size: 15px;
+  color: #1a5276;
+  word-break: break-word;
+}
+/* Real report: "Clear, nothing flagged in that document" and "also
+   checked this page" left the person unable to tell which actual page was
+   being talked about, the one that just opened, or the one the panel is
+   sitting on. This shows the real URL under every label/heading that
+   refers to a page or document. Monospace so a long URL reads as a URL,
+   not as prose; ellipsis rather than wrapping so a long one doesn't blow
+   up the panel's height, the full URL is still in the title tooltip. */
+.sentinel-source-url {
+  margin: 0 0 8px;
+  font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+  font-size: 11px;
+  /* Accessibility pass: the first color tried here (#7c8a94) was only
+     3.55:1 on white, below the 4.5:1 AA minimum. This clears 5.47:1. */
+  color: #5f6b73;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sentinel-source-url-inline {
+  /* Sits inside .sentinel-group-title, which sets uppercase + wide letter
+     spacing for its own label text, both wrong for a URL, undo them here. */
+  text-transform: none;
+  letter-spacing: normal;
+  font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+  color: #1a5276;
+}
+.sentinel-summary-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 10px;
+}
+.sentinel-summary-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: 0.01em;
+}
+.sentinel-divider {
+  border: none;
+  border-top: 1px solid #eee;
+  margin: 16px 0;
+}
+.sentinel-group-title {
+  margin: 12px 0 6px;
+  font-weight: 700;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #666;
+}
+.sentinel-group-title:first-child {
+  margin-top: 0;
+}
+/* Real feedback: a "Clear" result was just a plain sentence, easy to skim
+   past, while every FLAGGED result gets a loud pill badge. Give "Clear"
+   the same visual weight so it reads as a definite answer, not filler
+   text, using the same pill shape as the severity badges elsewhere. */
+.sentinel-clean-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  margin-bottom: 6px;
+  border-radius: 999px;
+  font-weight: 800;
+  font-size: 12.5px;
+  letter-spacing: 0.02em;
+  color: #ffffff;
+  /* Accessibility pass: the friendlier #27ae60 green only hit 2.87:1 with
+     white text, well below the 4.5:1 AA minimum, genuinely hard to read,
+     not just a shade off. This darker green clears 5.87:1. */
+  background: #157347;
+}
+.sentinel-clean {
+  margin: 0;
+  color: #444;
+}
+/* Real feedback: "that document" / "the visible page" needed to be an
+   actual clickable link to the exact thing that was checked, not just
+   nearby plain text. Underlined at rest (not just on hover) so it reads
+   as a link immediately, and !important so a host page's own link
+   styling can never make it blend in or disappear, same fix as the other
+   links in this panel. */
+.sentinel-doc-link {
+  color: #1a5276 !important;
+  text-decoration: underline !important;
+  text-underline-offset: 2px;
+  font-weight: 600;
+}
+.sentinel-doc-link:hover,
+.sentinel-doc-link:focus-visible {
+  color: #123a52 !important;
+}
+.sentinel-error {
+  margin: 0;
+  color: #c0392b;
+}
+/* Real feedback (2026-09-16): three or more high-severity flags in one
+   document should read as noticeably more alarming than a single red pill
+   among several, at a glance. A solid banner above the individual results,
+   not just another badge in the mix. White-on-#a5281c clears 7.2:1. */
+.sentinel-major-warning {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 10px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: #a5281c;
+  color: #ffffff;
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: 0.01em;
+}
+.sentinel-recommend {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  background: rgba(214, 136, 0, 0.1);
+  border: 1px solid rgba(214, 136, 0, 0.3);
+  border-radius: 6px;
+  color: #6b4700;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+/* Real report (hellopeter.com): this was the one piece of text in the
+   whole panel with no sentinel- class of its own, so it had nothing
+   protecting its color, it just inherited whatever the HOST PAGE's own
+   global "strong { ... }" selector said, which on that site made it
+   functionally invisible. Every other element here has an explicit
+   sentinel- class with its own color; !important guarantees a host page's
+   styles can never leak into text that's ours, not theirs. */
+.sentinel-recommend .sentinel-strong {
+  color: #6b4700 !important;
+  font-weight: 700 !important;
+}
+.sentinel-flag {
+  border: 1px solid #999;
+  border-left-width: 5px;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+/* The severity pill is deliberately the loudest thing on the card: a solid
+   fill (never a tint) with white text, an icon that doesn't depend on
+   color vision, and its own line above the title, not a small suffix word
+   easy to skim past. This was the #1 complaint: "HIGH"/"MEDIUM" were
+   functionally invisible before, this makes severity impossible to miss at
+   a glance, which matters most for anyone skimming quickly or who doesn't
+   see color differences easily. */
+.sentinel-sev-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  margin-bottom: 6px;
+  border-radius: 999px;
+  font-weight: 800;
+  font-size: 12.5px;
+  letter-spacing: 0.02em;
+  color: #ffffff;
+}
+.sentinel-flag-label {
+  font-weight: 700;
+  font-size: 14.5px;
+}
+.sentinel-flag-explain {
+  margin-top: 4px;
+  color: #2a2a2a;
+}
+.sentinel-snippet-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 6px 8px;
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 6px;
+}
+.sentinel-flag-snippet {
+  flex: 1;
+  font-style: italic;
+  color: #555;
+  font-size: 12.5px;
+  user-select: text;
+}
+.sentinel-copy-btn {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  background: #ffffff;
+  color: #555;
+  cursor: pointer;
+}
+.sentinel-copy-btn:hover {
+  background: #f2f2f2;
+}
+.sentinel-copy-btn.sentinel-copied {
+  color: #ffffff;
+  background: #27ae60;
+  border-color: #27ae60;
+  font-weight: 800;
+}
+/* Real report: this looked like plain text, not a link, and on hover it
+   seemed to vanish entirely instead of showing any hover feedback. Same
+   root cause as the invisible <strong> text elsewhere in the panel: a
+   host page's own global "a" / "a:hover" styles were winning and
+   overriding our color. A link needs to look like a link at rest
+   (underlined, not just on hover) and it needs !important so a host
+   site's own link styling can never leak in and make it disappear. */
+.sentinel-jump-link {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #1a5276 !important;
+  text-decoration: underline !important;
+  text-underline-offset: 2px;
+}
+.sentinel-jump-link:hover,
+.sentinel-jump-link:focus-visible {
+  color: #123a52 !important;
+  text-decoration: underline !important;
+}
+.sentinel-contact-row {
+  margin-top: 14px;
+  padding: 10px;
+  background: rgba(26, 82, 118, 0.07);
+  border: 1px solid rgba(26, 82, 118, 0.18);
+  border-radius: 8px;
+}
+.sentinel-contact-lede {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: #444;
+}
+.sentinel-contact-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: #1a5276;
+  color: #ffffff;
+  font-size: 12.5px;
+  font-weight: 700;
+  text-decoration: none;
+}
+.sentinel-contact-btn:hover {
+  background: #154360;
+}
+.sentinel-footnote {
+  margin: 14px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid #eee;
+  font-size: 11px;
+  line-height: 1.5;
+  /* Accessibility pass: #888 on white was only 3.54:1, below the 4.5:1
+     WCAG AA minimum for text this small. #666 clears it at 5.74:1 while
+     staying visually the quietest, de-emphasized line in the panel. */
+  color: #666;
+}
+
+@media (prefers-color-scheme: dark) {
+  .sentinel-panel {
+    background: #1c2126 !important;
+    color: #eaeef1 !important;
+    border: 1px solid #333a40;
+  }
+  .sentinel-panel-header {
+    background: #1c2126 !important;
+    color: #eaeef1 !important;
+    border-bottom: 1px solid #333a40;
+  }
+  .sentinel-panel-close,
+  .sentinel-panel-minimize {
+    /* Needs !important here too: the light-mode rule above now sets its
+       color with !important (same host-CSS-bleed fix), and !important
+       always wins over a plain declaration regardless of which media
+       query it's in, so without this these buttons would stay locked to
+       the light-mode grey even in dark mode. */
+    color: #aab2b8 !important;
+  }
+  .sentinel-panel-close:hover,
+  .sentinel-panel-minimize:hover {
+    color: #eaeef1 !important;
+  }
+  .sentinel-clean {
+    color: #cfd6db;
+  }
+  .sentinel-doc-link {
+    color: #7fb3d9 !important;
+  }
+  .sentinel-doc-link:hover,
+  .sentinel-doc-link:focus-visible {
+    color: #a9cfe8 !important;
+  }
+  .sentinel-source-url {
+    color: #9aa5ad;
+  }
+  .sentinel-source-url-inline {
+    color: #7fb3d9;
+  }
+  .sentinel-clean-pill {
+    background: #1e8449;
+  }
+  /* Accessibility pass: the light-mode red (#c0392b) carried over unchanged
+     into dark mode used to only hit 2.98:1 on the dark panel background,
+     below the 4.5:1 WCAG AA minimum, genuinely hard to read, not just a
+     style nitpick. This lighter red clears 5.8:1 while still reading as
+     an error. */
+  .sentinel-error {
+    color: #ff6b5b;
+  }
+  /* Accessibility pass: the light-mode solid red carried over unchanged
+     would sit closer to the dark panel background than to white, hurting
+     contrast. A near-black red background with a light red text color
+     clears 12.6:1. */
+  .sentinel-major-warning {
+    background: #3a1210;
+    color: #ffd9d3;
+  }
+  .sentinel-flag-explain {
+    color: #dfe4e8;
+  }
+  .sentinel-sev-badge {
+    color: #ffffff;
+  }
+  .sentinel-flag-snippet {
+    color: #9aa5ad;
+  }
+  .sentinel-snippet-row {
+    background: rgba(255, 255, 255, 0.06);
+  }
+  .sentinel-copy-btn {
+    background: #24303a;
+    border-color: #3a4a56;
+    color: #cfd6db;
+  }
+  .sentinel-copy-btn:hover {
+    background: #2c3a46;
+  }
+  .sentinel-group-title {
+    color: #9aa5ad;
+  }
+  .sentinel-details summary {
+    color: #7fb3d9;
+  }
+  .sentinel-overview-grid {
+    border-bottom-color: #333a40;
+  }
+  .sentinel-overview-card {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: #333a40;
+  }
+  .sentinel-overview-title {
+    color: #9aa5ad;
+  }
+  .sentinel-overview-clear {
+    color: #4fd67f;
+  }
+  .sentinel-overview-unchecked {
+    color: #e6a23c;
+  }
+  .sentinel-recommend {
+    background: rgba(214, 136, 0, 0.14);
+    border-color: rgba(214, 136, 0, 0.35);
+    color: #f0c674;
+  }
+  .sentinel-recommend .sentinel-strong {
+    color: #f0c674 !important;
+    font-weight: 700 !important;
+  }
+  .sentinel-contact-row {
+    background: rgba(127, 179, 217, 0.09);
+    border-color: rgba(127, 179, 217, 0.25);
+  }
+  .sentinel-contact-lede {
+    color: #cfd6db;
+  }
+  .sentinel-footnote {
+    color: #8b949a;
+    border-top-color: #333a40;
+  }
+  .sentinel-link-label {
+    color: #7fb3d9;
+  }
+  .sentinel-divider {
+    border-top-color: #333a40;
+  }
+  .sentinel-jump-link {
+    color: #7fb3d9 !important;
+  }
+  .sentinel-jump-link:hover,
+  .sentinel-jump-link:focus-visible {
+    color: #a9cfe8 !important;
+  }
+}
